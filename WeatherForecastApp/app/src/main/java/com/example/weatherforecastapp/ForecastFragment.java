@@ -1,11 +1,10 @@
 package com.example.weatherforecastapp;
 
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
 import android.os.AsyncTask;
 import android.os.Bundle;
-
-import androidx.fragment.app.Fragment;
-
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -15,6 +14,8 @@ import android.widget.ArrayAdapter;
 import android.widget.ListView;
 import android.widget.Toast;
 
+import androidx.fragment.app.Fragment;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -22,7 +23,6 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
-import java.util.zip.Inflater;
 
 
 /**
@@ -62,6 +62,23 @@ public class ForecastFragment extends Fragment {
         args.putString(ARG_PARAM2, param2);
         fragment.setArguments(args);
         return fragment;
+    }
+
+    private BroadcastReceiver MessageReceiver;
+
+    {
+        MessageReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                String action = intent.getAction();
+            }
+        };
+    }
+
+    private void refreshWeatherData() {
+        Intent intent = new Intent(getActivity(), FetchWeatherService.class);
+        intent.setAction(FetchWeatherService.ACTION_RETRIEVE_WEATHER_DATA);
+        getActivity().startService(intent);
     }
 
     @Override
