@@ -3,10 +3,12 @@ package com.example.weatherforecastapp;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.os.AsyncTask;
+import android.content.IntentFilter;
 import android.os.Bundle;
-import android.util.Log;
 import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
@@ -16,12 +18,6 @@ import android.widget.Toast;
 
 import androidx.fragment.app.Fragment;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.ArrayList;
 
 
@@ -63,23 +59,55 @@ public class ForecastFragment extends Fragment {
         fragment.setArguments(args);
         return fragment;
     }
-
-    private BroadcastReceiver MessageReceiver;
+    private ArrayAdapter<String> mForecastAdapter;
+    private BroadcastReceiver mBroadcastReceiver;
 
     {
-        MessageReceiver = new BroadcastReceiver() {
+        mBroadcastReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
                 String action = intent.getAction();
+                if (action.equals(FetchWeatherService.ACTION_RETRIEVE_WEATHER_DATA)) {
+                    String[] data = intent.getStringArrayExtra(FetchWeatherService.EXTRA_WEATHER_DATA);
+                    mForecastAdapter.clear();
+                    for(String dayForecastStr : data) {
+                        mForecastAdapter.add(dayForecastStr);
+                    }
+                }
             }
         };
     }
+
 
     private void refreshWeatherData() {
         Intent intent = new Intent(getActivity(), FetchWeatherService.class);
         intent.setAction(FetchWeatherService.ACTION_RETRIEVE_WEATHER_DATA);
         getActivity().startService(intent);
     }
+
+
+
+
+
+    @Override
+    public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+        inflater.inflate(R.menu.menu_refresh,menu);
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item){
+        int id = item.getItemId();
+        if (id == R.id.action_refresh) {
+            Toast.makeText(getActivity(), "refresh complete", Toast.LENGTH_SHORT).show();
+            refreshWeatherData();
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
+
+
+
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -89,6 +117,13 @@ public class ForecastFragment extends Fragment {
             mParam2 = getArguments().getString(ARG_PARAM2);
         }
     }
+
+
+
+
+
+
+
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -104,8 +139,6 @@ public class ForecastFragment extends Fragment {
         ListView listview = (ListView) view.findViewById(R.id.listview);
         listview.setAdapter(adapter);
 
-        FetchWeatherTask weatherTask = new FetchWeatherTask();
-        weatherTask.execute();
 
         listview.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
@@ -123,73 +156,15 @@ public class ForecastFragment extends Fragment {
                 }
             }
         });
+        IntentFilter intentFilter = new IntentFilter(FetchWeatherService.ACTION_RETRIEVE_WEATHER_DATA);
+        getActivity().registerReceiver(mBroadcastReceiver, intentFilter);
         return view;
-    }
-    public class FetchWeatherTask extends AsyncTask<Void, Void, String> {
-
-
-        private final String LOG_TAG = FetchWeatherTask.class.getSimpleName();
-
-        @Override
-        protected void onPreExecute() {
-            super.onPreExecute();
-        }
-
-        @Override
-        protected String doInBackground(Void... params) {
-        HttpURLConnection urlConnection = null;
-        BufferedReader reader = null;
-
-
-        String forecastJsonStr = null;
-
-        try {
-            String baseUrl =
-                    "https://api.openweathermap.org/data/2.5/forecast?id=524901&APPID=1a22cbe4c38692039f492385bb25d6b8";
-            URL url = new URL(baseUrl);
-
-            urlConnection = (HttpURLConnection) url.openConnection();
-            urlConnection.setRequestMethod("GET");
-            urlConnection.connect();
-
-            InputStream inputStream = urlConnection.getInputStream();
-            StringBuffer buffer = new StringBuffer();
-            if (inputStream == null) {
-                return null;
-            }
-            reader = new BufferedReader(new InputStreamReader(inputStream));
-
-            String line;
-            while ((line = reader.readLine()) != null) {
-                buffer.append(line + "\n");
-            }
-
-            if (buffer.length() == 0) {
-                return null;
-            }
-            forecastJsonStr = buffer.toString();
-        } catch (IOException e) {
-            Log.e("PlaceholderFragment", "Error ", e);
-            return null;
-        } finally{
-            if (urlConnection != null) {
-                urlConnection.disconnect();
-            }
-            if (reader != null) {
-                try {
-                    reader.close();
-                } catch (final IOException e) {
-                    Log.e("PlaceholderFragment", "Error closing stream", e);
-                }
-            }
-        }
-        return forecastJsonStr;
+}
+    @Override
+    public void onDestroyView() {
+        getActivity().unregisterReceiver(mBroadcastReceiver);
+        super.onDestroyView();
     }
 
 
-        @Override
-        protected void onPostExecute(String aVoid) {
-            super.onPostExecute(aVoid);
-            data = aVoid;
-        }
-    }}
+    }

@@ -6,9 +6,11 @@ import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.IBinder;
-import android.preference.PreferenceManager;
-import android.util.Log;
+import android.os.RemoteException;
 import android.text.format.Time;
+import android.util.Log;
+
+import androidx.preference.PreferenceManager;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -18,9 +20,11 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.lang.ref.WeakReference;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 
 public class FetchWeatherService extends Service {
     public static final String ACTION_RETRIEVE_WEATHER_DATA = "com.example.weatherforecast.DATA_RETRIEVED";
@@ -32,8 +36,7 @@ public class FetchWeatherService extends Service {
 
     @Override
     public IBinder onBind(Intent intent) {
-        // TODO: Return the communication channel to the service.
-        throw new UnsupportedOperationException("Not yet implemented");
+        return new FetchWeatherServiceProxy(this);
     }
 
     @Override
@@ -45,26 +48,19 @@ public class FetchWeatherService extends Service {
         return super.onStartCommand(intent, flags, startId);
     }
 
-    private void retrieveWeatherData(int startId) {
-        FetchWeatherTask weatherTask = new FetchWeatherTask(startId);
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        String cityId = prefs.getString("city", "1835847");
-        weatherTask.execute(cityId);
-    }
     public class FetchWeatherTask extends AsyncTask<String, Void, String[]> {
 
         private final String LOG_TAG = FetchWeatherTask.class.getSimpleName();
         private int mStartId = -1;
 
         public FetchWeatherTask(int startId) {
-            Log.d(LOG_TAG, "asfdasdfafd", new RuntimeException());
             mStartId = startId;
         }
 
         /* The date/time conversion code is going to be moved outside the asynctask later,
          * so for convenience we're breaking it out into its own method now.
          */
-        private String getReadableDateString(long time){
+        private String getReadableDateString(long time) {
             // Because the API returns a unix timestamp (measured in seconds),
             // it must be converted to milliseconds in order to be converted to valid date.
             SimpleDateFormat shortenedDateFormat = new SimpleDateFormat("EEE MMM dd");
@@ -86,7 +82,7 @@ public class FetchWeatherService extends Service {
         /**
          * Take the String representing the complete forecast in JSON Format and
          * pull out the data we need to construct the Strings needed for the wireframes.
-         *
+         * <p>
          * Fortunately parsing is easy:  constructor takes the JSON string and converts it
          * into an Object hierarchy for us.
          */
@@ -122,7 +118,7 @@ public class FetchWeatherService extends Service {
             dayTime = new Time();
 
             String[] resultStrs = new String[numDays];
-            for(int i = 0; i < weatherArray.length(); i++) {
+            for (int i = 0; i < weatherArray.length(); i++) {
                 // For now, using the format "Day, description, hi/low"
                 String day;
                 String description;
@@ -136,7 +132,7 @@ public class FetchWeatherService extends Service {
                 // "this saturday".
                 long dateTime;
                 // Cheating to convert this to UTC time, which is what we want anyhow
-                dateTime = dayTime.setJulianDay(julianStartDay+i);
+                dateTime = dayTime.setJulianDay(julianStartDay + i);
                 day = getReadableDateString(dateTime);
 
                 // description is in a child array called "weather", which is 1 element long.
@@ -269,10 +265,79 @@ public class FetchWeatherService extends Service {
 
             stopSelf(mStartId);
         }
+    }
+
+
+
+
+    private void retrieveWeatherData(int startId) {
+        FetchWeatherTask weatherTask = new FetchWeatherTask(startId);
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        String cityId = prefs.getString("city", "1835847");
+        weatherTask.execute(cityId);
+    }
+
+
+
+
+
+
         private void notifyWeatherDataRetrieved(String[] result){
+            synchronized (mListeners) {
+                for (IFetchDataListener listener : mListeners) {
+                    try {
+                        listener.onWeatherDataRetrieved(result);
+                    } catch (RemoteException ex) {
+                        ex.printStackTrace();
+                    }
+                }
+            }
             Intent intent = new Intent(ACTION_RETRIEVE_WEATHER_DATA);
             intent.putExtra(EXTRA_WEATHER_DATA, result);
             sendBroadcast(intent);
+        }
+
+
+    private ArrayList<IFetchDataListener> mListeners = new ArrayList<IFetchDataListener>();
+    private void registerFetchDataListener(IFetchDataListener listener) {
+        synchronized (mListeners) {
+            if (mListeners.contains(listener)) {
+                return;
+            }
+            mListeners.add(listener);
+        }
+    }
+
+    private void unregisterFetchDataListener(IFetchDataListener listener) {
+        synchronized (mListeners) {
+            if (!mListeners.contains(listener)) {
+                return;
+            }
+
+            mListeners.remove(listener);
+        }
+    }
+
+    private class FetchWeatherServiceProxy extends IFetchWeatherService.Stub {
+        private WeakReference<FetchWeatherService> mService = null;
+
+        public FetchWeatherServiceProxy(FetchWeatherService service) {
+            mService = new WeakReference<FetchWeatherService>(service);
+        }
+
+        @Override
+        public void retrieveWeatherData() throws RemoteException {
+            mService.get().retrieveWeatherData(-1);
+        }
+
+        @Override
+        public void registerFetchDataListener(IFetchDataListener listener) throws RemoteException {
+            mService.get().registerFetchDataListener(listener);
+        }
+
+        @Override
+        public void unregisterFetchDataListener(IFetchDataListener listener) throws RemoteException {
+            mService.get().unregisterFetchDataListener(listener);
         }
     }
 }
